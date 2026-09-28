@@ -1,97 +1,55 @@
+#!/usr/bin/env python3
+"""MyShot – kirish nuqtasi.
+
+    myshot.py                     tray ilovasini ishga tushiradi
+    myshot.py --area              maydonni belgilash (klaviatura yorlig'i uchun)
+    myshot.py --full              to'liq ekranni saqlash
+    myshot.py --install-shortcut  GNOME'da Shift+PrtScr yorlig'ini o'rnatish
+
+Dastur allaqachon ishlab turgan bo'lsa, buyruq unga yuboriladi va bu jarayon
+darhol tugaydi. PyQt faqat kerak bo'lganda yuklanadi – shunda yorliq tez ishlaydi.
+"""
+import argparse
 import sys
-import os
-from datetime import datetime
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox, QWidget
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtCore import QProcess
 
-class ScreenshotTrayApp(QWidget):
-    def __init__(self):
-        super().__init__()
-        
-        # Dastur oynasini yashiramiz (bizga faqat tray kerak)
-        self.hide()
-        
-        self.init_ui()
+from ipc import send_command
+from version import __version__
 
-    def init_ui(self):
-        # 1. Tray Icon yaratish
-        self.tray_icon = QSystemTrayIcon(self)
-        
-        # Tizimning standart 'camera' belgisini olamiz (rasm qidirib o'tirmaslik uchun)
-        icon = QIcon.fromTheme("camera-photo")
-        if icon.isNull():
-            # Agar tizim belgisi topilmasa, shunchaki bo'sh belgi (yoki o'z rasmingizni qo'ying)
-            icon = QIcon.fromTheme("applications-graphics")
-            
-        self.tray_icon.setIcon(icon)
-        self.tray_icon.setToolTip("Meniń Screenshot Programmam")
 
-        # 2. Menyu yaratish (O'ng tugma bosilganda chiqadigan)
-        menu = QMenu()
+def parse_args(argv):
+    parser = argparse.ArgumentParser(prog="myshot", description="Lightshot uslubidagi screenshot dasturi")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--area", dest="command", action="store_const", const="area",
+                       help="maydonni belgilab rasmga olish")
+    group.add_argument("--full", dest="command", action="store_const", const="full",
+                       help="to'liq ekranni rasmga olish")
+    group.add_argument("--install-shortcut", dest="command", action="store_const",
+                       const="install-shortcut", help="GNOME klaviatura yorlig'ini o'rnatish")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    return parser.parse_args(argv)
 
-        # Action: Hududni belgilab olish (Lightshot style)
-        select_action = QAction("✂️ Maydandi tanlaw (Area)", self)
-        select_action.triggered.connect(self.take_area_screenshot)
-        menu.addAction(select_action)
 
-        # Action: To'liq ekran
-        full_action = QAction("🖥️ Toliq ekran", self)
-        full_action.triggered.connect(self.take_full_screenshot)
-        menu.addAction(full_action)
+def main():
+    args = parse_args(sys.argv[1:])
 
-        # Ajratuvchi chiziq
-        menu.addSeparator()
+    if args.command == "install-shortcut":
+        from hotkeys import AREA_BINDING, HotkeyError, install_area_shortcut
+        try:
+            freed = install_area_shortcut()
+        except HotkeyError as error:
+            print(f"Xatolik: {error}", file=sys.stderr)
+            return 1
+        print(f"Yorliq o'rnatildi: {AREA_BINDING} → maydonni belgilash")
+        if freed:
+            print(f"GNOME'dagi bu tugma bo'shatildi: {', '.join(freed)}")
+        return 0
 
-        # Action: Chiqish
-        quit_action = QAction("❌ Shigiw", self)
-        quit_action.triggered.connect(QApplication.instance().quit)
-        menu.addAction(quit_action)
+    if args.command and send_command(args.command):
+        return 0
 
-        # Menuni trayga ulash
-        self.tray_icon.setContextMenu(menu)
-        self.tray_icon.show()
+    from app import run
+    return run(args.command)
 
-        # Dastur ishga tushganda bildirishnoma ko'rsatish
-        self.tray_icon.showMessage(
-            "Screenshot Dasturi",
-            "Dastur ishga tushdi! Tray (soat yoni)dan foydalaning.",
-            QSystemTrayIcon.MessageIcon.Information,
-            2000
-        )
 
-    def get_save_path(self):
-        # Fayl nomini va yo'lini generatsiya qilish
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        save_dir = os.path.expanduser("~/Pictures/Screenshots")
-        os.makedirs(save_dir, exist_ok=True)
-        return os.path.join(save_dir, f"shot_{timestamp}.png")
-
-    def take_area_screenshot(self):
-        # Hududni tanlab olish (-a bayrog'i area selection uchun)
-        filepath = self.get_save_path()
-        # Buyruqni ishga tushiramiz
-        # Waylandda bu sichqonchani krestik (+) ga aylantiradi
-        cmd = f"gnome-screenshot -a -f {filepath}"
-        os.system(cmd)
-        
-        # Agar fayl paydo bo'lsa, demak rasm olindi
-        if os.path.exists(filepath):
-            self.tray_icon.showMessage("Saqlandi!", f"Manzil: {filepath}", QSystemTrayIcon.MessageIcon.NoIcon)
-
-    def take_full_screenshot(self):
-        # To'liq ekran
-        filepath = self.get_save_path()
-        cmd = f"gnome-screenshot -f {filepath}"
-        os.system(cmd)
-        
-        if os.path.exists(filepath):
-            self.tray_icon.showMessage("Saqlandi!", f"Manzil: {filepath}", QSystemTrayIcon.MessageIcon.NoIcon)
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    # Ubuntu oynani yopganda dastur o'chib ketmasligi uchun
-    app.setQuitOnLastWindowClosed(False)
-    
-    ex = ScreenshotTrayApp()
-    sys.exit(app.exec())
+if __name__ == "__main__":
+    sys.exit(main())
