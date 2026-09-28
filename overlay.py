@@ -1,22 +1,28 @@
-"""Lightshot uslubidagi overlay: muzlatilgan ekran ustida maydonni belgilash.
+"""Lightshot uslubidagi overlay: muzlatilgan ekran ustida maydonni belgilash va chizish.
 
 Har bir monitor uchun alohida to'liq ekranli oyna ochiladi (Wayland'da oynani
 ixtiyoriy koordinataga qo'yib bo'lmaydi). Belgilangan maydonni surish va
-tutqichlar orqali o'lchamini o'zgartirish mumkin; rasm faqat Saqlash yoki
-Nusxalash bosilganda olinadi.
+tutqichlar orqali o'lchamini o'zgartirish, uning ustida chizish mumkin; rasm
+faqat Saqlash yoki Nusxalash bosilganda olinadi.
 """
-from PyQt6.QtCore import QObject, QPoint, QRect, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, QPoint, QPointF, QRect, QRectF, QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import (QColor, QCursor, QGuiApplication, QKeySequence, QPainter,
                          QPainterPath, QPen, QPixmap)
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QToolButton, QWidget
+from PyQt6.QtWidgets import QLineEdit, QWidget
 
+from annotations import SHAPES, Text, paint_all, text_font
 from capture import virtual_geometry
+from toolbar import MAX_WIDTH, MIN_WIDTH, ActionBar, ToolBar
 
 ACCENT = QColor(30, 144, 255)
 DIM = QColor(0, 0, 0, 110)
 HANDLE_SIZE = 7   # chiziladigan tutqich o'lchami
 HANDLE_HIT = 8    # tutqichni ushlash radiusi
 MIN_SIZE = 4      # bundan kichik belgilash bekor qilinadi
+BAR_MARGIN = 6
+
+DEFAULT_COLOR = "#ff3b30"
+DEFAULT_WIDTH = 3
 
 # Tutqich nomidagi harflar qaysi tomon o'zgarishini bildiradi: l/r/t/b
 HANDLE_CURSORS = {
@@ -26,44 +32,63 @@ HANDLE_CURSORS = {
     "t": Qt.CursorShape.SizeVerCursor, "b": Qt.CursorShape.SizeVerCursor,
 }
 
+# Asboblarni klaviaturadan tanlash
+TOOL_KEYS = {
+    Qt.Key.Key_P: "pen", Qt.Key.Key_L: "line", Qt.Key.Key_A: "arrow", Qt.Key.Key_R: "rect",
+    Qt.Key.Key_E: "ellipse", Qt.Key.Key_M: "marker", Qt.Key.Key_T: "text",
+}
+
 
 def _rect_from_points(a, b):
     return QRect(QPoint(min(a.x(), b.x()), min(a.y(), b.y())),
                  QPoint(max(a.x(), b.x()), max(a.y(), b.y())))
 
 
-class ActionBar(QFrame):
-    """Belgilangan maydon yonidagi amallar paneli."""
-    triggered = pyqtSignal(str)
+def _settings():
+    return QSettings("MyShot", "MyShot")
 
-    BUTTONS = (
-        ("save", "💾", "Saqlash (Ctrl+S / Enter)"),
-        ("copy", "📋", "Buferga nusxalash (Ctrl+C)"),
-        ("cancel", "✕", "Bekor qilish (Esc)"),
-    )
 
-    def __init__(self, parent):
+class TextInput(QLineEdit):
+    """Matn asbobi uchun joyida tahrirlash maydoni."""
+    committed = pyqtSignal(str)
+
+    def __init__(self, parent, pos, color, width):
         super().__init__(parent)
-        self.setObjectName("ActionBar")
-        self.setStyleSheet("""
-            #ActionBar { background: #2b2b2b; border: 1px solid #555; border-radius: 6px; }
-            QToolButton { color: white; background: transparent; border: none;
-                          border-radius: 4px; padding: 4px 8px; font-size: 16px; }
-            QToolButton:hover { background: #454545; }
-        """)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(2)
-        for action, text, tooltip in self.BUTTONS:
-            button = QToolButton(self)
-            button.setText(text)
-            button.setToolTip(tooltip)
-            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.clicked.connect(lambda _=False, a=action: self.triggered.emit(a))
-            layout.addWidget(button)
-        self.adjustSize()
-        self.hide()
+        self._done = False
+        self.setFont(text_font(width))
+        self.setFrame(False)
+        self.setTextMargins(0, 0, 0, 0)
+        self.setStyleSheet(f"QLineEdit {{ background: transparent; color: {color.name()};"
+                           f" border: 1px dashed {color.name()}; padding: 0; }}")
+        # QLineEdit matnni ichki chegaradan biroz surib chizadi – shuni hisobga olamiz
+        self.move(pos - QPoint(3, 3))
+        self.textChanged.connect(self._fit)
+        self._fit()
+        self.show()
+        self.setFocus()
+
+    def _fit(self):
+        metrics = self.fontMetrics()
+        self.resize(max(40, metrics.horizontalAdvance(self.text() + "  ")), metrics.height() + 6)
+
+    def finish(self, commit=True):
+        if self._done:
+            return
+        self._done = True
+        self.committed.emit(self.text() if commit else "")
+        self.deleteLater()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.finish(commit=False)
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.finish()
+        else:
+            super().keyPressEvent(event)
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.finish()
 
 
 class SelectionOverlay(QWidget):
@@ -83,8 +108,23 @@ class SelectionOverlay(QWidget):
         self._selection = QRect()      # mantiqiy koordinatalarda
         self._drag = None              # (turi, boshlang'ich nuqta, boshlang'ich maydon)
 
-        self._bar = ActionBar(self)
-        self._bar.triggered.connect(self.action_requested)
+        settings = _settings()
+        self._tool = ""
+        self._color = QColor(settings.value("color", DEFAULT_COLOR))
+        self._width = max(MIN_WIDTH, min(MAX_WIDTH, int(settings.value("width", DEFAULT_WIDTH))))
+        self._annotations = []
+        self._redo = []
+        self._current = None           # hozir chizilayotgan shakl
+        self._text_input = None
+
+        self._actions = ActionBar(self)
+        self._actions.triggered.connect(self._request_action)
+        self._tools = ToolBar(self, self._color, self._width)
+        self._tools.tool_changed.connect(self._set_tool)
+        self._tools.color_changed.connect(self._set_color)
+        self._tools.width_changed.connect(self._set_width)
+        self._tools.undo_requested.connect(self.undo)
+        self._tools.redo_requested.connect(self.redo)
 
     # --- ommaviy API ----------------------------------------------------
 
@@ -92,19 +132,83 @@ class SelectionOverlay(QWidget):
         return self._selection.isValid()
 
     def clear_selection(self):
+        self._finish_text(commit=False)
         self._selection = QRect()
         self._drag = None
-        self._bar.hide()
+        self._annotations.clear()
+        self._redo.clear()
+        self._hide_bars()
         self.update()
 
     def selected_pixmap(self):
-        """Belgilangan maydonni asl (jismoniy) o'lchamda qaytaradi."""
+        """Belgilangan maydonni chizilganlar bilan birga asl (jismoniy) o'lchamda qaytaradi."""
+        self._finish_text()
         sx = self._background.width() / self.width()
         sy = self._background.height() / self.height()
         s = self._selection
         source = QRect(round(s.x() * sx), round(s.y() * sy),
                        round(s.width() * sx), round(s.height() * sy))
-        return self._background.copy(source)
+        pixmap = self._background.copy(source)
+        if self._annotations:
+            painter = QPainter(pixmap)
+            painter.scale(sx, sy)
+            painter.translate(-QPointF(s.topLeft()))
+            paint_all(painter, self._annotations)
+            painter.end()
+        return pixmap
+
+    def undo(self):
+        self._finish_text()
+        if self._annotations:
+            self._redo.append(self._annotations.pop())
+            self.update()
+
+    def redo(self):
+        if self._redo:
+            self._annotations.append(self._redo.pop())
+            self.update()
+
+    # --- asbob sozlamalari ----------------------------------------------
+
+    def _set_tool(self, tool):
+        self._finish_text()
+        self._tool = tool
+        self._tools.set_tool(tool)
+        self._update_cursor(self.mapFromGlobal(QCursor.pos()))
+
+    def _set_color(self, color):
+        self._color = QColor(color)
+        _settings().setValue("color", self._color.name())
+
+    def _set_width(self, width):
+        self._width = width
+        self._tools.set_width(width)
+        _settings().setValue("width", width)
+
+    def _request_action(self, action):
+        self._finish_text()
+        self.action_requested.emit(action)
+
+    # --- matn -----------------------------------------------------------
+
+    def _start_text(self, pos):
+        self._finish_text()
+        self._text_input = TextInput(self, pos, self._color, self._width)
+        color, width = QColor(self._color), self._width
+        self._text_input.committed.connect(lambda text: self._add_text(pos, color, width, text))
+
+    def _add_text(self, pos, color, width, text):
+        self._text_input = None
+        annotation = Text(color, width, QPointF(pos), text)
+        if not annotation.is_empty():
+            self._annotations.append(annotation)
+            self._redo.clear()
+        self.setFocus()
+        self.update()
+
+    def _finish_text(self, commit=True):
+        if self._text_input is not None:
+            self._text_input.finish(commit)
 
     # --- yordamchilar ---------------------------------------------------
 
@@ -130,7 +234,12 @@ class SelectionOverlay(QWidget):
         if handle:
             self.setCursor(HANDLE_CURSORS[handle])
         elif self._selection.contains(pos):
-            self.setCursor(Qt.CursorShape.SizeAllCursor)
+            if self._tool == "text":
+                self.setCursor(Qt.CursorShape.IBeamCursor)
+            elif self._tool:
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            else:
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
         else:
             self.setCursor(Qt.CursorShape.CrossCursor)
 
@@ -138,24 +247,43 @@ class SelectionOverlay(QWidget):
         return QPoint(max(0, min(pos.x(), self.width() - 1)),
                       max(0, min(pos.y(), self.height() - 1)))
 
-    def _place_bar(self):
-        bar, s, margin = self._bar, self._selection, 6
-        bar.adjustSize()
-        x = s.right() - bar.width() + 1
-        y = s.bottom() + margin + 1
-        if y + bar.height() > self.height():      # pastda joy yo'q – tepaga
-            y = s.top() - bar.height() - margin
-        if y < 0:                                  # tepada ham yo'q – ichkariga
-            y = s.bottom() - bar.height() - margin
-        x = max(0, min(x, self.width() - bar.width()))
-        bar.move(x, y)
-        bar.show()
-        bar.raise_()
+    def _hide_bars(self):
+        self._actions.hide()
+        self._tools.hide()
+
+    def _place_bars(self):
+        s = self._selection
+        actions, tools = self._actions, self._tools
+        actions.adjustSize()
+        tools.adjustSize()
+
+        # Amallar paneli – maydon ostida, o'ng tomonga tekislangan
+        x = s.right() - actions.width() + 1
+        y = s.bottom() + BAR_MARGIN + 1
+        if y + actions.height() > self.height():      # pastda joy yo'q – tepaga
+            y = s.top() - actions.height() - BAR_MARGIN
+        if y < 0:                                      # tepada ham yo'q – ichkariga
+            y = s.bottom() - actions.height() - BAR_MARGIN
+        actions.move(max(0, min(x, self.width() - actions.width())), y)
+
+        # Asboblar paneli – maydonning o'ng tomonida, yuqoriga tekislangan
+        x = s.right() + BAR_MARGIN + 1
+        if x + tools.width() > self.width():           # o'ngda joy yo'q – chapga
+            x = s.left() - tools.width() - BAR_MARGIN
+        if x < 0:                                      # chapda ham yo'q – ichkariga
+            x = s.right() - tools.width() - BAR_MARGIN
+        y = max(0, min(s.top(), self.height() - tools.height()))
+        tools.move(max(0, x), y)
+
+        for bar in (actions, tools):
+            bar.show()
+            bar.raise_()
 
     # --- sichqoncha -----------------------------------------------------
 
     def mousePressEvent(self, event):
         pos = self._clamp(event.position().toPoint())
+        self._finish_text()
         if event.button() == Qt.MouseButton.RightButton:
             # O'ng tugma: avval belgilashni tozalaydi, ikkinchi marta – chiqish
             if self.has_selection():
@@ -167,24 +295,41 @@ class SelectionOverlay(QWidget):
             return
 
         handle = self._handle_at(pos)
+        inside = self._selection.contains(pos)
         if handle:
             self._drag = (handle, pos, QRect(self._selection))
-        elif self._selection.contains(pos):
+        elif inside and self._tool == "text":
+            self._start_text(pos)
+            return
+        elif inside and self._tool:
+            self._current = SHAPES[self._tool](self._color, self._width, QPointF(pos))
+            self._drag = ("draw", pos, None)
+            return
+        elif inside:
             self._drag = ("move", pos, QRect(self._selection))
+        elif self._annotations:
+            # Chizilganlarni tasodifan yo'qotib qo'ymaslik uchun yangi maydon boshlanmaydi
+            return
         else:
             self._drag = ("new", pos, None)
             self._selection = QRect(pos, pos)
             self.activated.emit()
-        self._bar.hide()
+        self._hide_bars()
         self.update()
 
     def mouseMoveEvent(self, event):
-        pos = self._clamp(event.position().toPoint())
         if self._drag is None:
-            self._update_cursor(pos)
+            self._update_cursor(self._clamp(event.position().toPoint()))
             return
 
         kind, start, start_rect = self._drag
+        if kind == "draw":
+            shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self._current.update(event.position(), shift)
+            self.update()
+            return
+
+        pos = self._clamp(event.position().toPoint())
         if kind == "new":
             self._selection = _rect_from_points(start, pos)
         elif kind == "move":
@@ -210,26 +355,51 @@ class SelectionOverlay(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton or self._drag is None:
             return
+        kind = self._drag[0]
         self._drag = None
-        if self._selection.width() < MIN_SIZE or self._selection.height() < MIN_SIZE:
+
+        if kind == "draw":
+            if not self._current.is_empty():
+                self._annotations.append(self._current)
+                self._redo.clear()
+            self._current = None
+        elif self._selection.width() < MIN_SIZE or self._selection.height() < MIN_SIZE:
             self.clear_selection()
         else:
-            self._place_bar()
+            self._place_bars()
         self._update_cursor(self._clamp(event.position().toPoint()))
         self.update()
+
+    def wheelEvent(self, event):
+        # Lightshot'dagidek: g'ildirak chiziq qalinligini o'zgartiradi
+        if not self.has_selection():
+            return
+        step = 1 if event.angleDelta().y() > 0 else -1 if event.angleDelta().y() < 0 else 0
+        width = max(MIN_WIDTH, min(MAX_WIDTH, self._width + step))
+        if width != self._width:
+            self._set_width(width)
 
     # --- klaviatura -----------------------------------------------------
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape:
+        key = event.key()
+        if key == Qt.Key.Key_Escape:
             self.action_requested.emit("cancel")
         elif not self.has_selection():
             super().keyPressEvent(event)
+        elif event.matches(QKeySequence.StandardKey.Undo):
+            self.undo()
+        elif (event.matches(QKeySequence.StandardKey.Redo)
+              or (key == Qt.Key.Key_Z and event.modifiers() == (Qt.KeyboardModifier.ControlModifier
+                                                                | Qt.KeyboardModifier.ShiftModifier))):
+            self.redo()
         elif event.matches(QKeySequence.StandardKey.Copy):
-            self.action_requested.emit("copy")
-        elif (event.matches(QKeySequence.StandardKey.Save)
-              or event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)):
-            self.action_requested.emit("save")
+            self._request_action("copy")
+        elif event.matches(QKeySequence.StandardKey.Save) or key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._request_action("save")
+        elif key in TOOL_KEYS and event.modifiers() == Qt.KeyboardModifier.NoModifier:
+            tool = TOOL_KEYS[key]
+            self._set_tool("" if self._tool == tool else tool)
         else:
             super().keyPressEvent(event)
 
@@ -253,6 +423,12 @@ class SelectionOverlay(QWidget):
         if not self.has_selection():
             return
 
+        painter.save()
+        painter.setClipRect(self._selection)
+        paint_all(painter, self._annotations + ([self._current] if self._current else []))
+        painter.restore()
+
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setPen(QPen(ACCENT, 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(QRectF(self._selection).adjusted(0.5, 0.5, -0.5, -0.5))

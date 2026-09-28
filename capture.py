@@ -60,14 +60,14 @@ class ScreenCapturer(QObject):
         elif shutil.which("gnome-screenshot"):
             self._grab_with_gnome_screenshot()
         elif not self._request_portal():
-            self._fail("gnome-screenshot o'rnatilmagan va portal ishlamadi")
+            self._fail("gnome-screenshot is not installed and the portal is unavailable")
 
     # --- natija ---------------------------------------------------------
 
     def _finish(self, image):
         self._busy = False
         if image.isNull():
-            self.failed.emit("Rasmni o'qib bo'lmadi")
+            self.failed.emit("Could not read the screenshot")
         else:
             self.captured.emit(image)
 
@@ -143,20 +143,20 @@ class ScreenCapturer(QObject):
         results = args[1] if len(args) > 1 else {}
 
         if response == 1:
-            self._fail("Screenshot olishga ruxsat berilmadi")
+            self._fail("Screenshot permission denied")
             return
         uri = results.get("uri") if response == 0 else None
         if hasattr(uri, "variant"):
             uri = uri.variant()
         if not uri:
-            self._fail("Portal rasm qaytarmadi")
+            self._fail("The portal returned no image")
             return
         # Portal faylni ~/Pictures ichiga saqlaydi, uni o'qib bo'lgach o'chiramiz
         self._finish_from_file(unquote(urlparse(uri).path))
 
     def _on_portal_timeout(self):
         self._disconnect_portal()
-        self._fail("Portal javob bermadi")
+        self._fail("The portal did not respond")
 
     # --- Wayland: gnome-screenshot --------------------------------------
 
@@ -189,7 +189,7 @@ class ScreenCapturer(QObject):
             if error == QProcess.ProcessError.FailedToStart:
                 process.deleteLater()
                 os.remove(path)
-                self._fail("gnome-screenshot topilmadi")
+                self._fail("gnome-screenshot not found")
 
         process.finished.connect(on_finished)
         process.errorOccurred.connect(on_error)

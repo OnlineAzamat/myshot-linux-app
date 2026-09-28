@@ -8,6 +8,8 @@ Inspired by Lightshot.
 - **System Tray Integration**: Runs quietly in the background without cluttering your taskbar.
 - **Lightshot-style Area Selection**: The screen freezes, you draw a frame, then move or
   resize it with handles. Nothing is saved until you press **Save** or **Copy**.
+- **Annotations**: pen, line, arrow, rectangle, ellipse, marker and text with
+  any color and line width, plus undo/redo.
 - **Keyboard Shortcut**: `Shift+PrtScr` opens area selection instantly, so open menus and
   right-click popups of other apps stay in the screenshot.
 - **Full Screen Capture**: Quickly grab the entire screen.
@@ -48,7 +50,7 @@ Inspired by Lightshot.
    ```bash
    ./run.sh --install-shortcut
    ```
-   or use *⌨️ Yorliq o'rnatish* from the tray menu.
+   or use *⌨️ Install shortcut* from the tray menu.
 
 ## Usage
 
@@ -76,6 +78,11 @@ If the tray app is already running, `--area` / `--full` are forwarded to it.
 | --------------------------- | ------------------------------ |
 | Drag                        | Select an area                 |
 | Drag inside / on handles    | Move / resize the selection    |
+| `P` `L` `A` `R` `E` `M` `T` | Pen, line, arrow, rectangle, ellipse, marker, text |
+| Same key / tool button again | Back to move mode             |
+| Mouse wheel                 | Change line width              |
+| `Shift` while drawing       | 45° lines, square / circle     |
+| `Ctrl+Z`, `Ctrl+Shift+Z`    | Undo, redo                     |
 | `Ctrl+S`, `Enter`           | Save                           |
 | `Ctrl+C`                    | Copy to clipboard              |
 | `Esc`, right click          | Cancel                         |
@@ -89,6 +96,8 @@ If the tray app is already running, `--area` / `--full` are forwarded to it.
 - `app.py` – tray icon, menu and command server.
 - `capture.py` – full screen capture (Qt / XDG portal / gnome-screenshot).
 - `overlay.py` – Lightshot-style selection overlay.
+- `toolbar.py` – tool bar and action bar.
+- `annotations.py` – drawing shapes (pen, arrow, text, …).
 - `hotkeys.py` – GNOME keyboard shortcut setup.
 - `ipc.py` – sends commands to the running instance.
 - `version.py` – application version.

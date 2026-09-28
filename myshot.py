@@ -17,14 +17,14 @@ from version import __version__
 
 
 def parse_args(argv):
-    parser = argparse.ArgumentParser(prog="myshot", description="Lightshot uslubidagi screenshot dasturi")
+    parser = argparse.ArgumentParser(prog="myshot", description="Lightshot-style screenshot tool")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--area", dest="command", action="store_const", const="area",
-                       help="maydonni belgilab rasmga olish")
+                       help="select an area and capture it")
     group.add_argument("--full", dest="command", action="store_const", const="full",
-                       help="to'liq ekranni rasmga olish")
+                       help="capture the full screen")
     group.add_argument("--install-shortcut", dest="command", action="store_const",
-                       const="install-shortcut", help="GNOME klaviatura yorlig'ini o'rnatish")
+                       const="install-shortcut", help="install the GNOME keyboard shortcut")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser.parse_args(argv)
 
@@ -37,11 +37,11 @@ def main():
         try:
             freed = install_area_shortcut()
         except HotkeyError as error:
-            print(f"Xatolik: {error}", file=sys.stderr)
+            print(f"Error: {error}", file=sys.stderr)
             return 1
-        print(f"Yorliq o'rnatildi: {AREA_BINDING} → maydonni belgilash")
+        print(f"Shortcut installed: {AREA_BINDING} → capture area")
         if freed:
-            print(f"GNOME'dagi bu tugma bo'shatildi: {', '.join(freed)}")
+            print(f"Removed from GNOME shortcuts: {', '.join(freed)}")
         return 0
 
     if args.command and send_command(args.command):

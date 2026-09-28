@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned
-- Annotation tools: pen, line, arrow, rectangle, ellipse, marker, text
-- Color picker and stroke width, undo (`Ctrl+Z`)
+## [0.3.0] - 2026-09-28
+
+### Added
+- Annotation tools on the selected area: pen, line, arrow, rectangle, ellipse,
+  marker (highlighter) and text. Tool shortcuts: `P`, `L`, `A`, `R`, `E`, `M`, `T`.
+- Vertical tool bar next to the selection with color picker (8 presets and a
+  custom color dialog) and line width slider.
+- Mouse wheel changes the line width; `Shift` snaps lines/arrows to 45° and
+  makes rectangles/ellipses square.
+- Undo / redo (`Ctrl+Z`, `Ctrl+Shift+Z` / `Ctrl+Y`).
+- The last used color and width are remembered.
+- Annotations are rendered at full resolution on HiDPI screens.
+
+### Changed
+- All user interface texts are now in English.
+- Clicking outside the selection no longer discards it once something is drawn.
 
 ## [0.2.1] - 2026-09-28
 
@@ -47,7 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System tray app with area and full screen capture via `gnome-screenshot`.
 - Auto-save to `~/Pictures/Screenshots` and desktop notifications.
 
-[Unreleased]: https://github.com/OnlineAzamat/myshot-linux-app/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/OnlineAzamat/myshot-linux-app/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/OnlineAzamat/myshot-linux-app/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/OnlineAzamat/myshot-linux-app/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/OnlineAzamat/myshot-linux-app/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OnlineAzamat/myshot-linux-app/releases/tag/v0.1.0

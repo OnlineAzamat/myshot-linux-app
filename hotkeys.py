@@ -30,7 +30,7 @@ def _gsettings(*args):
     try:
         result = subprocess.run(["gsettings", *args], capture_output=True, text=True, check=True)
     except FileNotFoundError:
-        raise HotkeyError("gsettings topilmadi (GNOME o'rnatilmaganmi?)")
+        raise HotkeyError("gsettings not found (is GNOME installed?)")
     except subprocess.CalledProcessError as error:
         raise HotkeyError(error.stderr.strip() or str(error))
     return result.stdout.strip()
@@ -71,7 +71,7 @@ def _free_shell_binding(binding):
 def install_area_shortcut(binding=AREA_BINDING):
     """Maydonni belgilash yorlig'ini o'rnatadi. GNOME'dan bo'shatilgan kalitlar ro'yxatini qaytaradi."""
     if not shutil.which("gsettings"):
-        raise HotkeyError("gsettings topilmadi (GNOME o'rnatilmaganmi?)")
+        raise HotkeyError("gsettings not found (is GNOME installed?)")
 
     path = CUSTOM_BASE + "myshot-area/"
     paths = _parse_strv(_gsettings("get", MEDIA_KEYS, "custom-keybindings"))
@@ -80,7 +80,7 @@ def install_area_shortcut(binding=AREA_BINDING):
         _gsettings("set", MEDIA_KEYS, "custom-keybindings", _format_strv(paths))
 
     schema = f"{CUSTOM_SCHEMA}:{path}"
-    _gsettings("set", schema, "name", _gvariant_str("MyShot — maydonni belgilash"))
+    _gsettings("set", schema, "name", _gvariant_str("MyShot – capture area"))
     _gsettings("set", schema, "command", _gvariant_str(launch_command("area")))
     _gsettings("set", schema, "binding", _gvariant_str(binding))
     return _free_shell_binding(binding)

@@ -35,7 +35,7 @@ class CommandServer(QObject):
         self._server = QLocalServer(self)
         QLocalServer.removeServer(SOCKET_PATH)  # oldingi ishga tushirishdan qolgan socket
         if not self._server.listen(SOCKET_PATH):
-            print(f"Ogohlantirish: buyruqlar socket'i ochilmadi: {self._server.errorString()}",
+            print(f"Warning: could not open command socket: {self._server.errorString()}",
                   file=sys.stderr)
         self._server.newConnection.connect(self._accept)
 
@@ -87,19 +87,19 @@ class ScreenshotTrayApp(QObject):
         self.menu = QMenu()
 
         # Action: Hududni belgilab olish (Lightshot style)
-        select_action = QAction("✂️ Maydandi tanlaw (Area)", self)
+        select_action = QAction("✂️ Capture area", self)
         select_action.triggered.connect(lambda: self.take_area_screenshot(MENU_CLOSE_DELAY_MS))
         self.menu.addAction(select_action)
 
         # Action: To'liq ekran
-        full_action = QAction("🖥️ Toliq ekran", self)
+        full_action = QAction("🖥️ Capture full screen", self)
         full_action.triggered.connect(lambda: self.take_full_screenshot(MENU_CLOSE_DELAY_MS))
         self.menu.addAction(full_action)
 
         self.menu.addSeparator()
 
         # Action: Klaviatura yorlig'ini o'rnatish
-        shortcut_action = QAction(f"⌨️ Yorliq o'rnatish ({AREA_BINDING})", self)
+        shortcut_action = QAction(f"⌨️ Install shortcut ({AREA_BINDING})", self)
         shortcut_action.triggered.connect(self.install_shortcut)
         self.menu.addAction(shortcut_action)
 
@@ -107,7 +107,7 @@ class ScreenshotTrayApp(QObject):
         self.menu.addSeparator()
 
         # Action: Chiqish
-        quit_action = QAction("❌ Shigiw", self)
+        quit_action = QAction("❌ Quit", self)
         quit_action.triggered.connect(QApplication.instance().quit)
         self.menu.addAction(quit_action)
 
@@ -118,8 +118,7 @@ class ScreenshotTrayApp(QObject):
         # Dastur ishga tushganda bildirishnoma ko'rsatish
         # (buyruq bilan ishga tushganda ko'rsatmaymiz – aks holda rasmga tushib qoladi)
         if show_welcome:
-            self.notify("Screenshot Dasturi",
-                        "Dastur ishga tushdi! Tray (soat yoni)dan foydalaning.", 2000)
+            self.notify("MyShot", "MyShot is running. Use the tray icon near the clock.", 2000)
 
     def notify(self, title, message, msecs=4000):
         self.tray_icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.NoIcon, msecs)
@@ -152,9 +151,9 @@ class ScreenshotTrayApp(QObject):
         if mode == "full":
             filepath = get_save_path()
             if image.save(filepath, "PNG"):
-                self.notify("Saqlandi!", f"Manzil: {filepath}")
+                self.notify("Saved", filepath)
             else:
-                self.notify("Xatolik", "Rasmni saqlab bo'lmadi")
+                self.notify("Error", "Could not save the screenshot")
             return
 
         self._session = CaptureSession(image, get_save_path, self)
@@ -163,28 +162,28 @@ class ScreenshotTrayApp(QObject):
 
     def _on_capture_failed(self, message):
         self._pending = None
-        self.notify("Rasmga olib bo'lmadi", message)
+        self.notify("Capture failed", message)
 
     def _on_session_finished(self, action, filepath):
         self._session.deleteLater()
         self._session = None
         if action == "save":
-            self.notify("Saqlandi!", f"Manzil: {filepath}")
+            self.notify("Saved", filepath)
         elif action == "copy":
-            self.notify("Nusxalandi!", "Rasm buferga olindi")
+            self.notify("Copied", "Screenshot copied to clipboard")
         elif action == "error":
-            self.notify("Xatolik", "Rasmni saqlab bo'lmadi")
+            self.notify("Error", "Could not save the screenshot")
 
     def install_shortcut(self):
         try:
             freed = install_area_shortcut()
         except HotkeyError as error:
-            self.notify("Yorliq o'rnatilmadi", str(error))
+            self.notify("Shortcut not installed", str(error))
             return
-        message = f"Endi {AREA_BINDING} maydonni belgilashni ochadi."
+        message = f"{AREA_BINDING} now starts area capture."
         if freed:
-            message += f"\nGNOME'dagi bu tugma bo'shatildi: {', '.join(freed)}"
-        self.notify("Yorliq o'rnatildi", message)
+            message += f"\nRemoved from GNOME shortcuts: {', '.join(freed)}"
+        self.notify("Shortcut installed", message)
 
 
 def run(initial_command=None):
