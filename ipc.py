@@ -16,13 +16,20 @@ def _socket_path():
 SOCKET_PATH = _socket_path()
 
 
-def send_command(command, timeout=0.5):
-    """Buyruq ishlab turgan nusxaga yetkazilsa True qaytaradi."""
+ACK = b"ok\n"
+
+
+def send_command(command, timeout=1.0):
+    """Ishlab turgan nusxa buyruqni qabul qilib, tasdiqlasa True qaytaradi.
+
+    Tasdiq kutilishi muhim: to'xtatilgan (Ctrl+Z) yoki osilib qolgan nusxa ham
+    socket'ni ochiq ushlab turadi, lekin buyruqni bajarmaydi.
+    """
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.settimeout(timeout)
             sock.connect(SOCKET_PATH)
             sock.sendall(f"{command}\n".encode())
-        return True
+            return sock.recv(len(ACK)) == ACK
     except OSError:
         return False

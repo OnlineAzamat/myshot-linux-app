@@ -1,4 +1,5 @@
 import os
+import signal
 import sys
 from datetime import datetime
 
@@ -9,7 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from capture import ScreenCapturer
 from hotkeys import AREA_BINDING, HotkeyError, install_area_shortcut
-from ipc import SOCKET_PATH
+from ipc import ACK, SOCKET_PATH
 from overlay import CaptureSession
 from version import __version__
 
@@ -49,6 +50,8 @@ class CommandServer(QObject):
         while socket.canReadLine():
             command = bytes(socket.readLine()).decode(errors="ignore").strip()
             if command:
+                socket.write(ACK)
+                socket.flush()
                 self.command_received.emit(command)
 
 
@@ -185,6 +188,9 @@ class ScreenshotTrayApp(QObject):
 
 
 def run(initial_command=None):
+    # Qt tsikli ishlayotganda Python SIGINT'ni ushlay olmaydi – Ctrl+C dasturni darhol yopsin
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
     app = QApplication(sys.argv[:1])
     app.setApplicationName("MyShot")
     app.setApplicationVersion(__version__)
