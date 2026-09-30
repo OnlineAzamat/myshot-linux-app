@@ -3,6 +3,16 @@
 A lightweight, system-tray based screenshot utility for Linux (GNOME/Ubuntu), built with Python and PyQt6.
 Inspired by Lightshot.
 
+![MyShot demo](docs/screenshots/demo.gif)
+
+## Screenshots
+
+| Area selection | Annotations |
+| :---: | :---: |
+| ![Area selection with move/resize handles](docs/screenshots/selection.png) | ![Arrow, rectangle, marker and text annotations](docs/screenshots/annotations.png) |
+| **Tray menu** | **Color & width pickers** |
+| ![Tray menu](docs/screenshots/tray-menu.png) | ![Color and line width pickers](docs/screenshots/pickers.png) |
+
 ## Features
 
 - **System Tray Integration**: Runs quietly in the background without cluttering your taskbar.
